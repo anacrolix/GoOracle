@@ -7,6 +7,7 @@ It depends on the oracle tool being installed:
 go get golang.org/x/tools/cmd/oracle
 """
 
+import os
 import sublime, sublime_plugin, subprocess, time, re
 
 class GoOracleCommand(sublime_plugin.TextCommand):
@@ -17,7 +18,7 @@ class GoOracleCommand(sublime_plugin.TextCommand):
         cb_map = self.get_map(text)
         byte_end = cb_map[sorted(cb_map.keys())[-1]]
         byte_begin = None
-        if not region.empty(): 
+        if not region.empty():
             byte_begin = cb_map[region.begin()-1]
 
         if mode:
@@ -101,27 +102,27 @@ class GoOracleCommand(sublime_plugin.TextCommand):
         pos = "#" + str(end_offset)
         if begin_offset is not None:
             pos = "#%i,#%i" %(begin_offset, end_offset)
-        env = get_setting("env")
 
         # Build oracle cmd.
-        cmd = "export GOPATH=\"%(go_path)s\"; export PATH=%(path)s; oracle -pos=%(file_path)s:%(pos)s -format=%(output_format)s %(mode)s %(scope)s"  % {
-        "go_path": env["GOPATH"],
-        "path": env["PATH"],
+        env = os.environ.copy()
+        env.update(filter(lambda x: x[0] in ['GOPATH', 'PATH'], self.view.settings().get('env').items()))
+        cmd = "oracle -pos=%(file_path)s:%(pos)s -format=%(output_format)s %(mode)s %(scope)s"  % {
         "file_path": self.view.file_name(),
         "pos": pos,
         "output_format": get_setting("oracle_format"),
         "mode": mode,
-        # TODO if scpoe is not set, use main.go under pwd or sublime project path.
-        "scope": ' '.join(get_setting("oracle_scope"))} 
+        # TODO if scope is not set, use main.go under pwd or sublime project path.
+        "scope": ' '.join(get_setting("oracle_scope"))}
 
         if "GOROOT" in env:
-            gRoot = "export GOROOT=\"%s\"; " % env["GOROOT"] 
+            gRoot = "export GOROOT=\"%s\"; " % env["GOROOT"]
             cmd = gRoot + cmd
 
-        sublime.set_timeout_async(lambda: self.runInThread(cmd, callback), 0)
+        sublime.set_timeout_async(lambda: self.runInThread(cmd, callback, env), 0)
 
-    def runInThread(self, cmd, callback):
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE, shell=True)
+    def runInThread(self, cmd, callback, env):
+        print(cmd)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE, shell=True, env=env)
         out, err = proc.communicate()
         callback(out.decode('utf-8'), err.decode('utf-8'))
 
@@ -141,7 +142,7 @@ class GoOracleWriteResultsCommand(sublime_plugin.TextCommand):
             view.insert(edit, view.size(), err)
 
         view.insert(edit, view.size(), "\n\n\n")
-        
+
 
 class GoOracleWriteRunningCommand(sublime_plugin.TextCommand):
     """ Writes the oracle output to the current view.
@@ -192,7 +193,7 @@ class GoOracleOpenResultCommand(sublime_plugin.EventListener):
         # filename:line.col-line.col: pattern for plain
         if m == None:
             m = re.search("^([^:]+):([0-9]+).([0-9]+)[-: ]", text)
-        
+
         if m:
             w = view.window()
             new_view = w.open_file(m.group(1) + ':' + m.group(2) + ':' + m.group(3), sublime.ENCODED_POSITION)
@@ -202,7 +203,7 @@ class GoOracleOpenResultCommand(sublime_plugin.EventListener):
 
 
 def get_setting(key, default=None):
-    """ Returns the setting in the following hierarchy: project setting, user setting, 
+    """ Returns the setting in the following hierarchy: project setting, user setting,
     default setting.  If none are set the 'default' value passed in is returned.
     """
 
